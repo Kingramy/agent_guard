@@ -10,6 +10,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+if sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table

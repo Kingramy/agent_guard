@@ -17,6 +17,8 @@ from agentguard.evaluators.deterministic import (
     calculate_recall_at_k,
     check_step_limit_bounding,
 )
+from agentguard.evaluators.neural_nli import evaluate_grounding
+from agentguard.evaluators.llm_judge import evaluate_with_llm
 from agentguard.security.scanner import (
     detect_agent_loop_thrashing,
     scan_synthetic_secret_leakage,
@@ -86,14 +88,29 @@ async def _async_evaluate_trace(trace_id: str) -> Dict[str, Any]:
         rec_res = calculate_recall_at_k(trace_contract, dummy_test_case, k=3)
         step_res = check_step_limit_bounding(trace_contract, max_steps=12)
 
+        # DL Evaluators
+        try:
+            _, nli_findings, nli_metric = evaluate_grounding(trace_contract)
+            llm_metric = evaluate_with_llm(trace_contract, dummy_test_case)
+        except Exception as e:
+            logger.error(f"DL evaluator failed: {e}")
+            nli_findings = []
+            nli_metric = None
+            llm_metric = None
+
         await repo.save_metric(trace_id, mrr_res)
         await repo.save_metric(trace_id, prec_res)
         await repo.save_metric(trace_id, rec_res)
         await repo.save_metric(trace_id, step_res)
+        if nli_metric:
+            await repo.save_metric(trace_id, nli_metric)
+        if llm_metric:
+            await repo.save_metric(trace_id, llm_metric)
 
         # 2. Security Scanners
         canary_tokens = trace_contract.metadata.get("canary_tokens", ["AGENTGUARD_SECRET_94f8b2"])
         findings = []
+        findings.extend(nli_findings)
 
         leak_findings = scan_synthetic_secret_leakage(trace_contract, canary_tokens=canary_tokens)
         findings.extend(leak_findings)

@@ -14,7 +14,11 @@ if str(BENCHMARKS_DIR) not in sys.path:
 
 from main_evaluator import AgentGuardEvaluator  # noqa: E402
 from report_generator import build_markdown_report  # noqa: E402
-from schema import EvaluationResult, ExecutionTrace, TestCase  # noqa: E402
+
+try:
+    from benchmarks.schema import EvaluationResult, ExecutionTrace, TestCase  # noqa: E402
+except ImportError:
+    from schema import EvaluationResult, ExecutionTrace, TestCase  # noqa: E402
 
 evaluator_instance = AgentGuardEvaluator()
 

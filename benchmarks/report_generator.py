@@ -2,7 +2,10 @@
 import os
 from typing import List
 
-from schema import EvaluationResult
+try:
+    from benchmarks.schema import EvaluationResult
+except ImportError:
+    from schema import EvaluationResult
 
 
 def assign_severity(finding: str) -> str:

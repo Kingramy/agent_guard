@@ -17,8 +17,8 @@ from agentguard.evaluators.deterministic import (
     calculate_recall_at_k,
     check_step_limit_bounding,
 )
-from agentguard.evaluators.neural_nli import evaluate_grounding
 from agentguard.evaluators.llm_judge import evaluate_with_llm
+from agentguard.evaluators.neural_nli import evaluate_grounding
 from agentguard.security.scanner import (
     detect_agent_loop_thrashing,
     scan_synthetic_secret_leakage,

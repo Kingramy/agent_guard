@@ -16,9 +16,10 @@ def evaluate_retrieval(
         doc.get("doc_id", "") for doc in retrieved_contexts[:k] if isinstance(doc, dict)
     ]
     hits = set(retrieved_ids).intersection(set(expected_sources))
+    relevant_hits = sum(1 for doc_id in retrieved_ids if doc_id in expected_sources)
 
-    # 1. Precision@K
-    precision = len(hits) / min(k, len(retrieved_ids)) if retrieved_ids else 0.0
+    # 1. Precision@K (ratio of retrieved chunks that are relevant)
+    precision = relevant_hits / min(k, len(retrieved_ids)) if retrieved_ids else 0.0
 
     # 2. Recall@K
     recall = len(hits) / len(expected_sources) if expected_sources else 1.0
@@ -134,8 +135,18 @@ def evaluate_answer_validity(final_answer: str) -> Tuple[bool, List[str]]:
         findings.append("EMPTY_RESPONSE: Agent returned an empty final answer.")
         return False, findings
 
-    failure_indicators = ["no response generated", "execution failed", "timed out", "timeout error"]
-    if any(ind in cleaned.lower() for ind in failure_indicators):
+    failure_indicators = [
+        "no response generated",
+        "execution failed",
+        "timeout error",
+        "agent stopped after",
+        "agent crashed",
+    ]
+    lower_cleaned = cleaned.lower()
+    is_failure = any(ind in lower_cleaned for ind in failure_indicators) or (
+        len(cleaned) < 60 and "timed out" in lower_cleaned
+    )
+    if is_failure:
         findings.append(f"EXECUTION_FAILURE: Agent crashed or terminated abnormally: '{cleaned}'")
         return False, findings
 

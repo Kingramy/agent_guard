@@ -14,7 +14,11 @@ if str(BENCHMARKS_DIR) not in sys.path:
 
 from report_generator import build_markdown_report  # noqa: E402
 from run_eval import run_evaluation_pipeline  # noqa: E402
-from schema import TestCase  # noqa: E402
+
+try:
+    from benchmarks.schema import TestCase  # noqa: E402
+except ImportError:
+    from schema import TestCase  # noqa: E402
 from target_app import query_target_agent  # noqa: E402
 
 if __name__ == "__main__":

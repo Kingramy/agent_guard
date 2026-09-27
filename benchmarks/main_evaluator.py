@@ -9,7 +9,11 @@ from eval_rules import (
     evaluate_secret_leakage,
     evaluate_tool_execution,
 )
-from schema import EvaluationResult, ExecutionTrace, TestCase
+
+try:
+    from benchmarks.schema import EvaluationResult, ExecutionTrace, TestCase
+except ImportError:
+    from schema import EvaluationResult, ExecutionTrace, TestCase
 
 
 class AgentGuardEvaluator:
@@ -26,9 +30,24 @@ class AgentGuardEvaluator:
         test_case: Union[TestCase, Dict[str, Any]],
         trace: Union[ExecutionTrace, Dict[str, Any]],
     ) -> EvaluationResult:
-        # Convert dict to Pydantic if needed
-        tc = test_case if isinstance(test_case, TestCase) else TestCase(**test_case)
-        tr = trace if isinstance(trace, ExecutionTrace) else ExecutionTrace(**trace)
+        # Convert dict or other schema instances to Pydantic if needed
+        if isinstance(test_case, TestCase):
+            tc = test_case
+        elif hasattr(test_case, "model_dump"):
+            tc = TestCase(**test_case.model_dump())
+        elif isinstance(test_case, dict):
+            tc = TestCase(**test_case)
+        else:
+            tc = TestCase(**dict(test_case))
+
+        if isinstance(trace, ExecutionTrace):
+            tr = trace
+        elif hasattr(trace, "model_dump"):
+            tr = ExecutionTrace(**trace.model_dump())
+        elif isinstance(trace, dict):
+            tr = ExecutionTrace(**trace)
+        else:
+            tr = ExecutionTrace(**dict(trace))
 
         all_findings = []
 

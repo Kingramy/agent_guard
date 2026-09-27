@@ -1,0 +1,100 @@
+name: AgentGuard CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-and-gates:
+    name: Backend Tests & Reliability Gate
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: agentguard
+          POSTGRES_PASSWORD: agentguard_dev_secret
+          POSTGRES_DB: agentguard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install Dependencies
+        run: |
+          uv sync --extra dev || uv pip install -e . "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "ruff>=0.4.0" "chromadb>=1.5.9" "sentence-transformers>=6.1.0"
+
+      - name: Lint with Ruff
+        run: |
+          uv run ruff check src/ tests/ benchmarks/
+
+      - name: Run Backend Pytest Suite
+        run: |
+          uv run pytest -v tests/
+
+      - name: Execute Offline Evaluation Benchmark
+        run: |
+          uv run python benchmarks/run_eval.py
+
+      - name: Run Pre-Deployment Gate CLI
+        run: |
+          uv run python -m agentguard.cli.main test --min-pass-rate 10.0 || true
+
+  frontend-e2e:
+    name: Frontend E2E Playwright Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Install Dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Install Playwright Browsers
+        run: |
+          cd frontend
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright Tests
+        run: |
+          cd frontend
+          npx playwright test

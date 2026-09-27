@@ -1,11 +1,16 @@
 # target_app.py
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional
 
 import chromadb
 import requests
-from schema import ExecutionTrace, ToolCallRecord
+
+try:
+    from benchmarks.schema import ExecutionTrace, ToolCallRecord
+except ImportError:
+    from schema import ExecutionTrace, ToolCallRecord
 
 import sys
 from pathlib import Path
@@ -18,8 +23,13 @@ if str(SRC_DIR) not in sys.path:
 if str(BENCHMARKS_DIR) not in sys.path:
     sys.path.insert(0, str(BENCHMARKS_DIR))
 
-from agentguard.tracing.decorators import trace_agent_run, trace_retrieval, trace_tool_call, trace_llm_generation
-from agentguard.tracing.tracer import setup_tracer
+from agentguard.tracing.decorators import (  # noqa: E402
+    trace_agent_run,
+    trace_llm_generation,
+    trace_retrieval,
+    trace_tool_call,
+)
+from agentguard.tracing.tracer import setup_tracer  # noqa: E402
 
 # Initialize OpenTelemetry Tracer
 setup_tracer(service_name="agentguard-target-agent")
@@ -116,6 +126,29 @@ def _call_llm(messages: List[Dict[str, str]]) -> str:
         raise ValueError("Response message content is None")
     return msg_content
 
+def _extract_json_payload(text: str) -> Dict[str, Any]:
+    """Robustly extracts JSON from LLM output, handling markdown blocks and conversational text."""
+    cleaned = text.strip()
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+    if fence_match:
+        try:
+            return json.loads(fence_match.group(1))
+        except Exception:
+            pass
+    start = cleaned.find('{')
+    end = cleaned.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(cleaned[start : end + 1])
+        except Exception:
+            pass
+    raise ValueError(f"Could not parse valid JSON from: {cleaned[:80]}...")
+
+
 @trace_agent_run(agent_name="target_agent", project_id="agentguard", agent_version="v1.0.0")
 def query_target_agent(user_prompt: str, test_case_id: str) -> ExecutionTrace:
     start_time = time.perf_counter()
@@ -134,7 +167,7 @@ def query_target_agent(user_prompt: str, test_case_id: str) -> ExecutionTrace:
         model_reply: Optional[str] = None
         try:
             model_reply = _call_llm(messages)
-            parsed = json.loads(model_reply)
+            parsed = _extract_json_payload(model_reply)
             print(f"      [Turn Debug] LLM Output: {parsed}")
         except Exception as e:
             print(f"      [Turn Debug] Failed to parse: {e}")

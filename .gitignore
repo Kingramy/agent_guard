@@ -52,7 +52,7 @@ out/
 *.swo
 
 # Docker & DB Data
-data/
+data/*
 !data/datasets/
 !data/datasets/**
 *.db

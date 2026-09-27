@@ -214,7 +214,7 @@ test.describe("AgentGuard Failure Explorer E2E & Forensic Verification", () => {
 
       // Switch to Security tab
       await page.locator("#tab-security").click();
-      await expect(page.locator("text=/canary/i")).toBeVisible();
+      await expect(page.locator("text=/canary/i").first()).toBeVisible();
     });
 
     test("should display Runaway Tool Loop incident details", async ({ page }) => {

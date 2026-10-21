@@ -19,11 +19,14 @@ from agentguard.evaluators.deterministic import (
 )
 from agentguard.evaluators.llm_judge import evaluate_with_llm
 from agentguard.evaluators.neural_nli import evaluate_grounding
+from agentguard.security.entropy import scan_high_entropy_secrets
+from agentguard.security.guardrail import evaluate_runtime_guardrails
 from agentguard.security.scanner import (
     detect_agent_loop_thrashing,
     scan_synthetic_secret_leakage,
     verify_tool_authorization,
 )
+from agentguard.security.xpia import scan_xpia_vulnerabilities
 from agentguard.storage.database import get_db_context
 from agentguard.storage.repository import TraceRepository
 from agentguard.workers.celery_app import celery_app
@@ -107,31 +110,56 @@ async def _async_evaluate_trace(trace_id: str) -> Dict[str, Any]:
         if llm_metric:
             await repo.save_metric(trace_id, llm_metric)
 
-        # 2. Security Scanners
+        # 2. Comprehensive AI Security Pipeline
         canary_tokens = trace_contract.metadata.get("canary_tokens", ["AGENTGUARD_SECRET_94f8b2"])
-        findings = []
-        findings.extend(nli_findings)
+        raw_findings = []
+        raw_findings.extend(nli_findings)
 
+        # Literal canary token leak scan
         leak_findings = scan_synthetic_secret_leakage(trace_contract, canary_tokens=canary_tokens)
-        findings.extend(leak_findings)
+        raw_findings.extend(leak_findings)
 
+        # Shannon entropy secret exfiltration scan
+        entropy_findings = scan_high_entropy_secrets(trace_contract, ignore_tokens=canary_tokens)
+        raw_findings.extend(entropy_findings)
+
+        # XPIA / RAG Poisoning & Markdown Exfiltration scan
+        xpia_findings = scan_xpia_vulnerabilities(trace_contract)
+        raw_findings.extend(xpia_findings)
+
+        # Basic loop and auth checks
         loop_finding = detect_agent_loop_thrashing(trace_contract, max_identical_calls=3)
         if loop_finding:
-            findings.append(loop_finding)
+            raw_findings.append(loop_finding)
 
         auth_findings = verify_tool_authorization(
             trace_contract, allowed_tools=dummy_test_case.allowed_tools
         )
-        findings.extend(auth_findings)
+        raw_findings.extend(auth_findings)
 
-        for f in findings:
+        # Pre-execution runtime guardrails & Markov circuit breaker
+        guardrail_findings = evaluate_runtime_guardrails(
+            trace_contract, allowed_tools=dummy_test_case.allowed_tools
+        )
+        raw_findings.extend(guardrail_findings)
+
+        # Deduplicate findings
+        seen_keys = set()
+        unique_findings = []
+        for f in raw_findings:
+            key = (f.category, f.span_id, f.title)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                unique_findings.append(f)
+
+        for f in unique_findings:
             await repo.save_finding(f)
 
         return {
             "status": "completed",
             "trace_id": trace_id,
             "metrics_calculated": 4,
-            "findings_recorded": len(findings),
+            "findings_recorded": len(unique_findings),
         }
 
 
